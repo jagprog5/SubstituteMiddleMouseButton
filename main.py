@@ -1,4 +1,15 @@
-import pythoncom, pyHook, win32ui, pyautogui
+import pythoncom
+import pyHook
+import pyautogui
+import win32ui
+import threading
+import time
+import win32gui
+import win32com.client
+import win32process
+from win32api import GetCurrentProcessId, OpenProcess
+from win32con import PROCESS_ALL_ACCESS
+import sys
 
 # pyHook must be manually added!
 # https://www.lfd.uci.edu/~gohlke/pythonlibs/#pyhook
@@ -11,46 +22,86 @@ l_ctrl_state = False
 outside_key_count = 0
 
 def OnKeyboardEvent(event):
-    if exit_prompt_given or event.WindowName is None: # occurs when program is closing
-        return True
+    global exit_prompt_given
+    if exit_prompt_given or event.WindowName is None:  # occurs when program is closing
+        return False
 
     global outside_key_count
-    # only work with key inputs if solid edge is being used
-    if event.WindowName.startswith("Solid Edge"):
-        outside_key_count = 0 # reset outside key count once solid edge is being used
-        global l_ctrl_state
-        # Oem_3 is the '`' key, or lowercase '~'. Key near top left of keyboard
-        if event.Key == "Oem_3":
-            new_state = event.MessageName == "key down"
-            global middle_btn_state
-            if new_state != middle_btn_state:
-                # the button state has been toggled!
-                middle_btn_state = new_state
+    global l_ctrl_state
+    global middle_btn_state
+
+    # Oem_3 is the '`' key, or lowercase '~'. Key near top left of keyboard
+    if event.Key == "Oem_3":
+        new_state = event.MessageName == "key down"
+        if new_state != middle_btn_state:
+            # the button state has been toggled!
+            middle_btn_state = new_state
+            if middle_btn_state:
+                if l_ctrl_state:
+                    exit_with_prompt("")
+
+            if event.WindowName.startswith("Solid Edge"):
                 if middle_btn_state:
-                    if l_ctrl_state:
-                        # 4096 to bring project to top
-                        exit_with_prompt("")
+                # only work if solid edge is being used
                     pyautogui.mouseDown(button='middle')
                 else:
                     pyautogui.mouseUp(button='middle')
-        elif event.Key == "Lcontrol":
-            l_ctrl_state = event.MessageName == "key down"
-            if l_ctrl_state and middle_btn_state:
-                exit_with_prompt("")
-    else:
+    elif event.Key == "Lcontrol":
+        l_ctrl_state = event.MessageName == "key down"
+        if l_ctrl_state and middle_btn_state:
+            exit_with_prompt("")
+
+    if not event.WindowName.startswith("Solid Edge"):
         outside_key_count += 1
         # increment key count if solid edge is not in focus
         if outside_key_count == 50:
-            exit_with_prompt("You may have accidentally forgotten this program.\n")
+            exit_with_prompt("You may have accidentally forgotten that this program is running.\n")
+    else :
+        outside_key_count = 0  # reset outside key count once solid edge is being used
 
     return True
 
 
+"""
+In order:
+-Makes all other inputs ignored (by setting exit_prompt_given)
+-Open dialog box in thread
+-While thread is running, elevate the dialog
+-Join. Wait for dialog to close
+-Exit
+"""
 def exit_with_prompt(prefix):
     global exit_prompt_given
     exit_prompt_given = True
-    win32ui.MessageBox(prefix + "The program is exiting.", "Mouse Util", 4096)
-    exit()
+    dialog_title = "Mouse Util"
+    t = threading.Thread(target=_message_thread, args=(dialog_title, prefix + "The program is exiting."))
+    t.start()
+    time.sleep(0.1)
+    win32gui.EnumWindows(_prompt_enum_handle, dialog_title)
+    t.join()
+
+    # https: // stackoverflow.com / a / 16617092
+    # In addition, for some reason sys.exit() is required, not just exit()
+    # pythoncom.CoUninitialize()
+    # pythoncom.CoFreeUnusedLibraries()
+    # pid = GetCurrentProcessId()
+    # handle = OpenProcess(PROCESS_ALL_ACCESS, True, pid)
+    # win32process.SetProcessWorkingSetSize(handle, -1, -1)
+    sys.exit()
+
+
+# run within thread, because message box locks thread until it is closed
+def _message_thread(title, text):
+    win32ui.MessageBox(text, title)
+
+
+def _prompt_enum_handle(hwnd, title):
+    if win32gui.GetWindowText(hwnd) == title and win32gui.GetClassName(hwnd) == "#32770":
+        # https://stackoverflow.com/a/30314197/5458478
+        # ¯\_(ツ)_/¯
+        win32com.client.Dispatch("WScript.Shell").SendKeys('%')
+        win32gui.SetForegroundWindow(hwnd)
+
 
 hm = pyHook.HookManager()
 # get both key up and key down events
