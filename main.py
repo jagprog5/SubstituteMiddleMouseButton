@@ -6,9 +6,6 @@ import threading
 import time
 import win32gui
 import win32com.client
-import win32process
-from win32api import GetCurrentProcessId, OpenProcess
-from win32con import PROCESS_ALL_ACCESS
 import sys
 
 # pyHook must be manually added!
@@ -24,7 +21,7 @@ outside_key_count = 0
 def OnKeyboardEvent(event):
     global exit_prompt_given
     if exit_prompt_given or event.WindowName is None:  # occurs when program is closing
-        return False
+        return True
 
     global outside_key_count
     global l_ctrl_state
@@ -36,19 +33,23 @@ def OnKeyboardEvent(event):
         if new_state != middle_btn_state:
             # the button state has been toggled!
             middle_btn_state = new_state
-            if middle_btn_state:
-                if l_ctrl_state:
-                    exit_with_prompt("")
+            if middle_btn_state and l_ctrl_state:
+                # no need to release middle mouse button before exiting
+                # the program is being exited before the button is pressed down
+                exit_with_prompt("")
 
+            # only work if solid edge is being used
             if event.WindowName.startswith("Solid Edge"):
+                # change middle mouse button state based on keyboard button state
                 if middle_btn_state:
-                # only work if solid edge is being used
                     pyautogui.mouseDown(button='middle')
                 else:
                     pyautogui.mouseUp(button='middle')
     elif event.Key == "Lcontrol":
         l_ctrl_state = event.MessageName == "key down"
         if l_ctrl_state and middle_btn_state:
+            # release button before exiting.
+            pyautogui.mouseUp(button='middle')
             exit_with_prompt("")
 
     if not event.WindowName.startswith("Solid Edge"):
@@ -64,7 +65,7 @@ def OnKeyboardEvent(event):
 
 """
 In order:
--Makes all other inputs ignored (by setting exit_prompt_given)
+-Makes all other key inputs ignored (by setting exit_prompt_given)
 -Open dialog box in thread
 -While thread is running, elevate the dialog
 -Join. Wait for dialog to close
@@ -79,14 +80,6 @@ def exit_with_prompt(prefix):
     time.sleep(0.1)
     win32gui.EnumWindows(_prompt_enum_handle, dialog_title)
     t.join()
-
-    # https: // stackoverflow.com / a / 16617092
-    # In addition, for some reason sys.exit() is required, not just exit()
-    # pythoncom.CoUninitialize()
-    # pythoncom.CoFreeUnusedLibraries()
-    # pid = GetCurrentProcessId()
-    # handle = OpenProcess(PROCESS_ALL_ACCESS, True, pid)
-    # win32process.SetProcessWorkingSetSize(handle, -1, -1)
     sys.exit()
 
 
