@@ -11,12 +11,14 @@ import sys
 # pyHook must be manually added!
 # https://www.lfd.uci.edu/~gohlke/pythonlibs/#pyhook
 # Download the file corresponding to the python version being used (I'm using 3.6.6)
-# pip install the file
+# pip install
 
 exit_prompt_given = False
 middle_btn_state = False
 l_ctrl_state = False
 outside_key_count = 0
+commonCADSoftware = ["solidedge", "solidworks", "autodeskautocad"]
+
 
 def OnKeyboardEvent(event):
     global exit_prompt_given
@@ -26,6 +28,14 @@ def OnKeyboardEvent(event):
     global outside_key_count
     global l_ctrl_state
     global middle_btn_state
+
+    # only work if common CAD software is being used.
+    identifier = event.WindowName.lower().replace(" ", "")
+    isCADWindow = False
+    for s in commonCADSoftware:
+        if identifier.startswith(s):
+            isCADWindow = True
+            break
 
     # Oem_3 is the '`' key, or lowercase '~'. Key near top left of keyboard
     if event.Key == "Oem_3":
@@ -37,9 +47,7 @@ def OnKeyboardEvent(event):
                 # no need to release middle mouse button before exiting
                 # the program is being exited before the button is pressed down
                 exit_with_prompt("")
-
-            # only work if solid edge is being used
-            if event.WindowName.startswith("Solid Edge"):
+            if isCADWindow:
                 # change middle mouse button state based on keyboard button state
                 if middle_btn_state:
                     pyautogui.mouseDown(button='middle')
@@ -51,14 +59,13 @@ def OnKeyboardEvent(event):
             # release button before exiting.
             pyautogui.mouseUp(button='middle')
             exit_with_prompt("")
-
-    if not event.WindowName.startswith("Solid Edge"):
+    if not isCADWindow:
         outside_key_count += 1
         # increment key count if solid edge is not in focus
-        if outside_key_count == 50:
+        if outside_key_count >= 150:
             exit_with_prompt("You may have accidentally forgotten that this program is running.\n")
     else :
-        outside_key_count = 0  # reset outside key count once solid edge is being used
+        outside_key_count = 0  # reset outside key count once CAD software is being used
 
     return True
 
